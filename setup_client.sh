@@ -10,16 +10,14 @@ apt install npm
 npm install -g ssb-server
 
 cd "{$BASH_SOURCE/*}/"
-cat > run_client.sh <<EOF
-#!/bin/bash
+cat '#!/bin/bash
 
 if [ "$EUID" -ne 0 ]; then
   echo "Script must be run with sudo."
   exit
 fi
 
-ssb-server start --blobs.sympathy=0 --blobs.max=0
-EOF
+ssb-server start --blobs.sympathy=0 --blobs.max=0' > run_client.sh
 
 chmod 744 run_client.sh
 
