@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if ["$EUID" -ne 0]; then
+if [ "$EUID" -ne 0 ]; then
   echo "Script must be run with sudo."
   exit
 fi
@@ -13,7 +13,7 @@ cd "{$BASH_SOURCE/*}/"
 cat > run_client.sh <<EOF
 #!/bin/bash
 
-if ["$EUID" -ne 0]; then
+if [ "$EUID" -ne 0 ]; then
   echo "Script must be run with sudo."
   exit
 fi
