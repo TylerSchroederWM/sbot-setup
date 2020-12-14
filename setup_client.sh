@@ -10,7 +10,7 @@ apt install npm
 npm install -g ssb-server
 
 cd "{$BASH_SOURCE/*}/"
-cat '#!/bin/bash
+echo '#!/bin/bash
 
 if [ "$EUID" -ne 0 ]; then
   echo "Script must be run with sudo."
