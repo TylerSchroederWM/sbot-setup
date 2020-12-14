@@ -33,7 +33,7 @@ cat > ~/.ssb/config <<EOF
         }
       ]
     }
-  }
+  },
   "blobs": {
     "sympathy": 0,
     "max": 0
@@ -42,7 +42,7 @@ cat > ~/.ssb/config <<EOF
 EOF
 
 cd "${BASH_SOURCE%/*}/"
-cat '#!/bin/bash
+echo '#!/bin/bash
 
 if [ "$EUID" -ne 0 ]; then
   echo "Script must be run with sudo."
