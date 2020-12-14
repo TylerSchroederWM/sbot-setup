@@ -42,8 +42,7 @@ cat > ~/.ssb/config <<EOF
 EOF
 
 cd "${BASH_SOURCE%/*}/"
-cat > runserver.sh <<EOF
-#!/bin/bash
+cat '#!/bin/bash
 
 if [ "$EUID" -ne 0 ]; then
   echo "Script must be run with sudo."
@@ -52,11 +51,10 @@ fi
 
 while true; do
   ssb-server start --host routableAddr
-done
-EOF
+done' > run_server.sh
 
-chmod 744 runserver.sh
+chmod 744 run_server.sh
 
 echo "Setup complete!"
-echo "To run the server, execute 'sudo ./runserver.sh' in this file's directory."
+echo "To run the server, execute 'sudo ./run_server.sh' in this file's directory."
 echo "(note: this process will monopolize your terminal)"
