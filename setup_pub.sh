@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if ["$EUID" -ne 0]; then
+  echo "Script must be run with sudo."
+  exit
+fi
+
 read -p 'Please enter your routable IP address or hostname: ' routableAddr
 
 apt get update
@@ -39,6 +44,11 @@ EOF
 cd "${BASH_SOURCE%/*}/"
 cat > runserver.sh <<EOF
 #!/bin/bash
+
+if ["$EUID" -ne 0]; then
+  echo "Script must be run with sudo."
+  exit
+fi
 
 while true; do
   ssb-server start --host routableAddr
