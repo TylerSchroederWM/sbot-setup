@@ -7,7 +7,7 @@ fi
 
 read -p 'Please enter your routable IP address or hostname: ' routableAddr
 
-apt get update
+apt update
 apt install npm
 npm install -g ssb-server
 
