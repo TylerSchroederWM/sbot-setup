@@ -35,8 +35,7 @@ cat > ~/.ssb/config <<EOF
     }
   },
   "blobs": {
-    "sympathy": 0,
-    "max": 0
+    "sympathy": 1
   }
 }
 EOF
