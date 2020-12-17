@@ -17,7 +17,7 @@ if [ "$EUID" -ne 0 ]; then
   exit
 fi
 
-ssb-server start --blobs.sympathy=0 --blobs.max=0' > run_client.sh
+ssb-server start --blobs.sympathy=2' > run_client.sh
 
 chmod 744 run_client.sh
 
