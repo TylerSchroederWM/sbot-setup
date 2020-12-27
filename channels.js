@@ -6,6 +6,9 @@ var clientFactory = require("ssb-client");
 var path = require("path");
 var pull = require("pull-stream");
 
+DEFAULT_CHANNEL_METADATA = {
+	lastMsgId: undefined
+}
 DEFAULT_CHANNEL_OBJECT = {
 	messages: []
 }
@@ -19,11 +22,10 @@ if (!fs.existsSync(SBOT_ROOT)) {
 
 if (!fs.existsSync(SBOT_CHANNEL_DIR)) {
 	fs.mkdirSync(SBOT_CHANNEL_DIR);
+}
 
-	// also create the metadata file while we're at it
-	var tempStream = fs.createWriteStream(SBOT_CHANNEL_DATA);
-	tempStream.write("{}"); // initialize empty JSON object
-	tempStream.end();
+if (!fs.existsSync(SBOT_CHANNEL_DATA)) {
+	fs.writeFileSync(SBOT_CHANNEL_DATA, "{}");
 }
 
 clientFactory(function (err, client) {
@@ -36,13 +38,13 @@ clientFactory(function (err, client) {
 
 	if(!argv._ || argv._.length == 0) {
 		console.log("No channel provided. To get messages for a channel, try 'node channels.js example'");
-		console.log("(note that 'node channels.js #example' will not work because '#' is a protected character)");
+		console.log("(note that 'node channels.js #example' will not work because '#' is a protected character)\n");
 
 		var trackedChannels = getTrackedChannels(metadata);
 		if(trackedChannels.length) {
 			console.log("Currently tracked channels are:");
-			for(const channelName in trackedChannels) {
-				console.log(channelName);
+			for(const channelNameIndex in trackedChannels) {
+				console.log(trackedChannels[channelNameIndex]); // i'm going to find whoever decided to make for...in loops work like this in javascript and impale them on a rusty fencepole
 			}
 		}
 		else {
@@ -50,21 +52,22 @@ clientFactory(function (err, client) {
 			process.exit(0);
 		}
 
-		return;
+		process.exit(0);
 	}
 
-	var channelName = argv._[0][0] == "#" ? argv._[0] : "#" + argv._[0];
+	var channelName = "#" + argv._[0];
 	var trackedChannelData = getChannelData(channelName, metadata); // only get data for the first channel given (easy to change this if needed)
 	var trackedChannelMessages = getChannelMessages(channelName);
 
 	var feedStreamOptions = {
-		reverse: true
+		reverse: true,
+		type: "post"
 	}
 	if(trackedChannelData.lastMsgId) {
 		feedStreamOptions.gt = trackedChannelData.lastMsgId;
 	}
 
-	var feedStream = client.createFeedStream(feedStreamOptions);
+	var feedStream = client.messagesByType(feedStreamOptions);
 
 	pull(feedStream, pull.collect(function(err, msgs) {
 		if(err) {
@@ -73,21 +76,23 @@ clientFactory(function (err, client) {
 		}
 
 		if(msgs) {
-			for(var msg in msgs) {
-				if(msg.value && msg.value.content && msg.value.content.type == "post" && msg.value.content.text.includes(channelName)) {
+			for(var msg_index in msgs) {
+				var msg = msgs[msg_index]; // i am going to find whoever decided to make for...in loops work like this in javascript and abandon them in death valley with an entire cactus up their ass
+				if(msg.value.content.text && msg.value.content.text.includes(channelName)) {
 					trackedChannelMessages.messages.push(msg);
 				}
 			}
 		}
 
 		console.log("Found " + trackedChannelMessages["messages"].length + " messages:");
-		for(var msg in trackedChannelMessages["messages"]) {
+		for(var msg_index in trackedChannelMessages["messages"]) {
+			var msg = trackedChannelMessages["messages"][msg_index]; // i'm going to find whoever decided to make for..in loops like this in javascript and airdrop them into the open maw of mount kilimanjaro
 			console.log(msg.value.content.text + "\n");
 		}
 
 		updateChannelMessages(channelName, trackedChannelMessages, metadata);
 
-		client.close();
+		client.close(true, () => {});
 	}));
 });
 
@@ -122,6 +127,10 @@ function updateChannelMessages(channelName, channelJson, metadata) {
 		process.exit(0);
 	}
 
-	metadata.channelName.lastMsgId = channelJson.messages[-1].key; // once we've successfully updated messages, update the most recent message ID
-	fs.writeFileSync(SBOT_CHANNEL_DATA, metadata);
+	if(metadata.channelName == undefined) {
+		metadata[channelName] = DEFAULT_CHANNEL_METADATA;
+	}
+
+	metadata[channelName].lastMsgId = channelJson["messages"].slice(-1)[0].key; // once we've successfully updated messages, update the most recent message ID
+	fs.writeFileSync(SBOT_CHANNEL_DATA, JSON.stringify(metadata));
 }
