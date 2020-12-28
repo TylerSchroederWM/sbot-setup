@@ -78,7 +78,10 @@ clientFactory(function (err, client) {
 		if(msgs) {
 			for(var msg_index in msgs) {
 				var msg = msgs[msg_index]; // i am going to find whoever decided to make for...in loops work like this in javascript and abandon them in death valley with an entire cactus up their ass
-				if(msg.value.content.text && msg.value.content.text.includes(channelName)) {
+				if(msg.value.content.text && typeof(msg.value.content.text) == "string" && msg.value.content.text.includes(channelName)) {
+					trackedChannelMessages.messages.push(msg);
+				}
+				if(msg.value.content.channel && msg.value.content.channel === channelName.substring(1)) {
 					trackedChannelMessages.messages.push(msg);
 				}
 			}
