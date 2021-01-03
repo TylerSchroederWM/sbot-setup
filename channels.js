@@ -6,25 +6,34 @@ var clientFactory = require("ssb-client");
 var path = require("path");
 var pull = require("pull-stream");
 
+// Change to 'true' to get debugging output
+DEBUG = false
+
 DEFAULT_CHANNEL_METADATA = {
-	lastMsgId: undefined
+	lastMsgTimestamp: 0
 }
 DEFAULT_CHANNEL_OBJECT = {
 	messages: []
 }
+MESSAGE_SEPERATOR = "---------------"
+MESSAGE_SEPERATOR_COLOR = "\x1b[33m"
+MESSAGE_COLOR = "\x1b[0m"
 SBOT_ROOT = path.join(home, ".ssb");
 SBOT_CHANNEL_DIR = path.join(SBOT_ROOT, "channels");
 SBOT_CHANNEL_DATA = path.join(SBOT_CHANNEL_DIR, ".data");
 
 if (!fs.existsSync(SBOT_ROOT)) {
+	debug("no ~/.ssb folder detected, creating it...");
 	fs.mkdirSync(SBOT_ROOT);
 }
 
 if (!fs.existsSync(SBOT_CHANNEL_DIR)) {
+	debug("no channels folder detected, creating it...");
 	fs.mkdirSync(SBOT_CHANNEL_DIR);
 }
 
 if (!fs.existsSync(SBOT_CHANNEL_DATA)) {
+	debug("no channel metadata file found, creating it...");
 	fs.writeFileSync(SBOT_CHANNEL_DATA, "{}");
 }
 
@@ -59,21 +68,27 @@ clientFactory(function (err, client) {
 	var trackedChannelData = getChannelData(channelName, metadata); // only get data for the first channel given (easy to change this if needed)
 	var trackedChannelMessages = getChannelMessages(channelName);
 
+	debug("fetched " + trackedChannelMessages["messages"].length + " messages from cache");
+
+
 	var feedStreamOptions = {
-		reverse: true,
 		type: "post"
 	}
-	if(trackedChannelData.lastMsgId) {
-		feedStreamOptions.gt = trackedChannelData.lastMsgId;
+	if(trackedChannelData.lastMsgTimestamp) {
+		feedStreamOptions.gt = trackedChannelData.lastMsgTimestamp;
 	}
 
 	var feedStream = client.messagesByType(feedStreamOptions);
 
+
+	debug("pulling messages from feedstream with settings " + JSON.stringify(feedStreamOptions));
 	pull(feedStream, pull.collect(function(err, msgs) {
 		if(err) {
 			console.log("Error when fetching messages: " + err);
 			throw err;
 		}
+
+		debug("found " + msgs.length + " messages after " + (feedStreamOptions.gt ? feedStreamOptions.gt : "0"));
 
 		if(msgs) {
 			for(var msg_index in msgs) {
@@ -88,9 +103,12 @@ clientFactory(function (err, client) {
 		}
 
 		console.log("Found " + trackedChannelMessages["messages"].length + " messages:");
+		console.log(MESSAGE_SEPERATOR_COLOR, MESSAGE_SEPERATOR);
+
 		for(var msg_index in trackedChannelMessages["messages"]) {
 			var msg = trackedChannelMessages["messages"][msg_index]; // i'm going to find whoever decided to make for..in loops like this in javascript and airdrop them into the open maw of mount kilimanjaro
-			console.log(msg.value.content.text + "\n");
+			console.log(MESSAGE_COLOR, msg.value.content.text);
+			console.log(MESSAGE_SEPERATOR_COLOR, MESSAGE_SEPERATOR);
 		}
 
 		updateChannelMessages(channelName, trackedChannelMessages, metadata);
@@ -106,7 +124,7 @@ function getTrackedChannels(data) {
 function getChannelData(channelName, data) {
 	if(!data[channelName]) {
 		data[channelName] = {
-			lastMsgId: 0,
+			lastMsgTimestamp: 0,
 		}
 	}
 
@@ -134,6 +152,13 @@ function updateChannelMessages(channelName, channelJson, metadata) {
 		metadata[channelName] = DEFAULT_CHANNEL_METADATA;
 	}
 
-	metadata[channelName].lastMsgId = channelJson["messages"].slice(-1)[0].key; // once we've successfully updated messages, update the most recent message ID
+	metadata[channelName].lastMsgTimestamp = channelJson["messages"].slice(-1)[0].timestamp; // once we've successfully updated messages, update the most recent message ID
 	fs.writeFileSync(SBOT_CHANNEL_DATA, JSON.stringify(metadata));
+}
+
+function debug(message) {
+	if(DEBUG) {
+		var timestamp = new Date();
+		console.log("[" + timestamp.toISOString() + "] " +  message);
+	}
 }
