@@ -15,6 +15,8 @@ DEFAULT_CHANNEL_METADATA = {
 DEFAULT_CHANNEL_OBJECT = {
 	messages: []
 }
+DEFAULT_CHANNEL_OBJECT_SIZE = 15
+GRAPH_TYPE = "follow"
 MESSAGE_SEPERATOR = "---------------"
 MESSAGE_SEPERATOR_COLOR = "\x1b[33m"
 MESSAGE_COLOR = "\x1b[0m"
@@ -37,85 +39,127 @@ if (!fs.existsSync(SBOT_CHANNEL_DATA)) {
 	fs.writeFileSync(SBOT_CHANNEL_DATA, "{}");
 }
 
+debug("Creating client...");
 clientFactory(function (err, client) {
 	if(err) {
 		console.log("[FATAL] Error when starting scuttlebot: " + err);
 		throw err;
 	}
+	debug("Successfully created client");
 
-	var metadata = JSON.parse(fs.readFileSync(SBOT_CHANNEL_DATA));
+
+	main(client);
+});
+
+function main(client) {
+	// var metadata = JSON.parse(fs.readFileSync(SBOT_CHANNEL_DATA));
 
 	if(!argv._ || argv._.length == 0) {
-		console.log("No channel provided. To get messages for a channel, try 'node channels.js example'");
-		console.log("(note that 'node channels.js #example' will not work because '#' is a protected character)\n");
-
-		var trackedChannels = getTrackedChannels(metadata);
-		if(trackedChannels.length) {
-			console.log("Currently tracked channels are:");
-			for(const channelNameIndex in trackedChannels) {
-				console.log(trackedChannels[channelNameIndex]); // i'm going to find whoever decided to make for...in loops work like this in javascript and impale them on a rusty fencepole
-			}
-		}
-		else {
-			console.log("No channels are currently tracked.")
-			process.exit(0);
-		}
-
+		showHelp(metadata);
+		client.close(true, () => {});
 		process.exit(0);
 	}
 
 	var channelName = "#" + argv._[0];
-	var trackedChannelData = getChannelData(channelName, metadata); // only get data for the first channel given (easy to change this if needed)
-	var trackedChannelMessages = getChannelMessages(channelName);
+	// var trackedChannelData = getChannelData(channelName, metadata); // only get data for the first channel given (easy to change this if needed)
+	// var trackedChannelMessages = getChannelMessages(channelName);
+	var trackedChannelMessages = DEFAULT_CHANNEL_OBJECT;
+	// debug("fetched " + trackedChannelMessages["messages"].length + " messages from cache");
 
-	debug("fetched " + trackedChannelMessages["messages"].length + " messages from cache");
+	client.friends.hops({
+			dunbar: Number.MAX_SAFE_INTEGER,
+			max: 1
+		},
+		function(err, hops) {
+			if(err) {
+				console.log("[FATAL] Could not retreive friends list (is ssb-friends installed?)")
+				client.close(true, () => {});
+				process.exit(4);
+			}
 
-
-	var feedStreamOptions = {
-		type: "post"
-	}
-	if(trackedChannelData.lastMsgTimestamp) {
-		feedStreamOptions.gt = trackedChannelData.lastMsgTimestamp;
-	}
-
-	var feedStream = client.messagesByType(feedStreamOptions);
-
-
-	debug("pulling messages from feedstream with settings " + JSON.stringify(feedStreamOptions));
-	pull(feedStream, pull.collect(function(err, msgs) {
-		if(err) {
-			console.log("Error when fetching messages: " + err);
-			throw err;
+			fetchChannelMessagesFrom(client, channelName, trackedChannelMessages, Object.keys(hops));
 		}
+	)
+}
 
-		debug("found " + msgs.length + " messages after " + (feedStreamOptions.gt ? feedStreamOptions.gt : "0"));
+function fetchChannelMessagesFrom(client, channelName, trackedChannelMessages, hops) {
+	// So it seems like Scuttlebutt IDs are case insensitive
+	// This means that you can accidentially capitalize/uncapitalize letters when following someone, and the follow will still go through
+	// However, the typo will remain in your friend graph and ruin any attempt made to query for that ID in its normal capitalization
+	// To avoid this skullfuckery, we just use a list and map lower() onto it beforehand
+	var followedIds = hops.map(id => id.toLowerCase());
 
-		if(msgs) {
-			for(var msg_index in msgs) {
-				var msg = msgs[msg_index]; // i am going to find whoever decided to make for...in loops work like this in javascript and abandon them in death valley with an entire cactus up their ass
-				if(msg.value.content.text && typeof(msg.value.content.text) == "string" && msg.value.content.text.includes(channelName)) {
-					trackedChannelMessages.messages.push(msg);
-				}
-				if(msg.value.content.channel && msg.value.content.channel === channelName.substring(1)) {
-					trackedChannelMessages.messages.push(msg);
+	debug("Fetching messages from IDs in " + JSON.stringify(followedIds));
+
+	var search = client.search && client.search.query
+	if(!search) {
+		console.log("[FATAL] ssb-search plugin must be installed to use channels (sbot plugins.install ssb-search)");
+		process.exit(5);
+	}
+
+	var hashtagStream = search({
+		query: channelName
+	})
+	var channelStream = client.query.read({
+		query: [{
+			"$filter": {
+				value: {
+					content: {
+						channel: channelName.substring(1)
+					}
 				}
 			}
-		}
+		}],
+		reverse: true
+	})
 
-		console.log("Found " + trackedChannelMessages["messages"].length + " messages:");
-		console.log(MESSAGE_SEPERATOR_COLOR, MESSAGE_SEPERATOR);
+	var taskData = {
+		msgsFound: 0,
+		lastTimestamp: 0
+	};
+	pull(hashtagStream, pull.filter(function(msg) {
+		// taskData.lastTimestamp = msg.timestamp; // abuse of filter to always get the most recent timestamp
 
-		for(var msg_index in trackedChannelMessages["messages"]) {
-			var msg = trackedChannelMessages["messages"][msg_index]; // i'm going to find whoever decided to make for..in loops like this in javascript and airdrop them into the open maw of mount kilimanjaro
-			console.log(MESSAGE_COLOR, msg.value.content.text);
-			console.log(MESSAGE_SEPERATOR_COLOR, MESSAGE_SEPERATOR);
-		}
+		var actuallyHasHashtag = msg.value && msg.value.content && msg.value.content.text && typeof(msg.value.content.text) == "string" && msg.value.content.text.includes(channelName);
+		return actuallyHasHashtag && followedIds.includes(msg.value.author.toLowerCase())
+	}), pull.drain(function(msg) {
+		trackedChannelMessages.messages.push(msg);
+		taskData.msgsFound += 1;
 
-		updateChannelMessages(channelName, trackedChannelMessages, metadata);
-
+		printMsg(msg);
+	}, function() {
+		// saveMessages(client, taskData, channelName, trackedChannelMessages, metadata);
 		client.close(true, () => {});
 	}));
-});
+}
+
+function saveMessages(client, taskData, channelName, trackedChannelMessages, metadata) {
+	debug("found " + taskData.msgsFound + " new messages");
+	debug(JSON.stringify(taskData));
+	console.log("Found " + trackedChannelMessages["messages"].length + " messages:");
+
+	updateChannelMessages(channelName, trackedChannelMessages, metadata, taskData.lastTimestamp);
+
+}
+
+function showHelp(metadata) {
+	console.log("No channel provided. To get messages for a channel, run 'node channels.js example'");
+        console.log("(note that 'node channels.js #example' will not work, because # is a protected character)");
+
+        var trackedChannels = getTrackedChannels(metadata);
+        if(trackedChannels.length) {
+                console.log("Currently tracked channels are:");
+                for(const channelNameIndex in trackedChannels) {
+			var stats = fs.statSync(path.join(SBOT_CHANNEL_DIR, trackedChannels[channelNameIndex]));
+			if(stats.size > DEFAULT_CHANNEL_OBJECT_SIZE) { // don't say we're tracking empty channels -- if they were interesting, they'd have stuff in them
+				console.log(trackedChannels[channelNameIndex]);
+			}
+                }
+        }
+        else {
+                console.log("No channels are currently tracked.");
+        }
+}
 
 function getTrackedChannels(data) {
 		return Object.keys(data);
@@ -141,18 +185,30 @@ function getChannelMessages(channelName) {
 	return JSON.parse(raw);
 }
 
-function updateChannelMessages(channelName, channelJson, metadata) {
-	fs.writeFileSync(path.join(SBOT_CHANNEL_DIR, channelName), JSON.stringify(channelJson));
+function createFeedStream(client, lastTimestamp) {
+	var feedStreamOptions = DEFAULT_FEEDSTREAM_OPTIONS
 
-	if(!channelJson.messages || channelJson.messages.length == 0) {
-		process.exit(0);
-	}
+        if(lastTimestamp) {
+                feedStreamOptions.gt = lastTimestamp;
+        }
+
+	debug("Creating feedstream with options" + JSON.stringify(feedStreamOptions));
+        return client.messagesByType(feedStreamOptions);
+}
+
+function printMsg(msg) {
+	console.log(MESSAGE_SEPERATOR_COLOR, MESSAGE_SEPERATOR);
+	console.log(MESSAGE_COLOR, msg.value.content.text);
+}
+
+function updateChannelMessages(channelName, channelJson, metadata, latestTimestamp) {
+	fs.writeFileSync(path.join(SBOT_CHANNEL_DIR, channelName), JSON.stringify(channelJson));
 
 	if(metadata.channelName == undefined) {
 		metadata[channelName] = DEFAULT_CHANNEL_METADATA;
 	}
 
-	metadata[channelName].lastMsgTimestamp = channelJson["messages"].slice(-1)[0].timestamp; // once we've successfully updated messages, update the most recent message ID
+	metadata[channelName].lastMsgTimestamp = latestTimestamp; // once we've successfully updated messages, update the most recent message ID
 	fs.writeFileSync(SBOT_CHANNEL_DATA, JSON.stringify(metadata));
 }
 
